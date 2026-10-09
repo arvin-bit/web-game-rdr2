@@ -1082,4 +1082,37 @@ function tick(now){requestAnimationFrame(tick);
 requestAnimationFrame(tick);
 })();
 </script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script>
+/* ===== GRAPHICS LAYER: CDN-loaded glTF models ===== */
+(()=>{
+const BASE='https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Assets@main/Models/';
+
+/* scale a model to a given height and enable shadows */
+function fit(obj,height){
+  const s=new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3());
+  obj.scale.multiplyScalar(height/Math.max(s.y,1e-4));
+  obj.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true}});
+  return obj;
+}
+
+/* place a model so its bottom-center sits at (x,y,z) */
+function place(obj,x,y,z){
+  obj.position.set(0,0,0);
+  const b=new THREE.Box3().setFromObject(obj),c=b.getCenter(new THREE.Vector3());
+  obj.position.set(x-c.x,y-b.min.y,z-c.z);
+  scene.add(obj);
+  return obj;
+}
+
+/* ---- lanterns on every street lamp ---- */
+const loader=new THREE.GLTFLoader();
+loader.load(BASE+'Lantern/glTF-Binary/Lantern.glb',gltf=>{
+  for(const light of lamps){
+    const m=fit(gltf.scene.clone(true),.9);
+    place(m,light.position.x,2.9,light.position.z);
+  }
+},undefined,err=>console.warn('Lantern model failed to load',err));
+})();
+</script>
 </body></html>
