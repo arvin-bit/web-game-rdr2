@@ -944,4 +944,142 @@ function post15(dt,spd){const t=G.t,list=[[pl,spd,0]];for(const e of enemies)if(
   if(!SET.rain&&rainOn)rainOn=false;gear.style.display=started?'block':'none'}
 applySet();
 frame();
-</script></body></html>
+</script>
+
+<script>
+/* ===== STORY + REALISM LAYER ===== */
+(()=>{
+const TITLE='Ashes of Cholla Creek';
+const PROLOGUE=[
+ 'Spring, 1893. Cal Mercer rides home and finds the family ranch burned to the ground.',
+ 'His father lies in the dust. The gold they hid under the barn is gone.',
+ 'The men responsible rode for Silas Vane. Cal has a horse, a worn revolver, and nothing left to lose.'
+];
+const JL=['Speak with a townsperson in Valentine','Mount your horse','Break Vane\'s gang: five outlaws','Find Silas Vane at Cholla Springs'];
+
+/* ---- styles & UI ---- */
+const css=document.createElement('style');
+css.textContent=`
+#card{position:fixed;left:50%;top:24%;transform:translateX(-50%);width:min(680px,88vw);text-align:center;font-family:Georgia,serif;color:#f1e3c0;text-shadow:0 2px 8px #000;opacity:0;transition:opacity .8s;pointer-events:none;line-height:1.6;font-size:clamp(16px,2.2vw,22px);z-index:4}
+#card b{display:block;color:#e0b050;letter-spacing:.3em;font-size:.75em;margin-bottom:6px;text-transform:uppercase}
+#obj{position:fixed;top:52px;left:50%;transform:translateX(-50%);font-family:Georgia,serif;color:#f1e3c0;background:rgba(20,12,6,.55);border:1px solid #6b4a22;padding:4px 14px;font-size:14px;letter-spacing:.08em;text-shadow:0 2px 6px #000;pointer-events:none;white-space:nowrap;display:none;z-index:4}
+#obj b{color:#e0b050;font-weight:normal;letter-spacing:.25em;margin-right:8px;font-size:12px}
+#journal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(10,6,3,.8);z-index:22;font-family:Georgia,serif;color:#f1e3c0}
+#journal>div{background:#2a1a0c;border:2px solid #6b4a22;padding:20px 26px;width:min(560px,92vw);max-height:86vh;overflow:auto;line-height:1.55}
+#journal h2{margin:0 0 8px;letter-spacing:.2em;color:#e0b050}
+#journal .d{opacity:.45;text-decoration:line-through}
+#lowhp{position:fixed;inset:0;pointer-events:none;opacity:0;box-shadow:inset 0 0 160px 60px #7a0000;z-index:3}
+`;
+document.head.appendChild(css);
+
+const ov=$('ov'),intro=document.createElement('p');
+intro.style.cssText='font-style:italic;color:#e0b050';intro.textContent=PROLOGUE.join(' ');
+ov.querySelector('h1').after(intro);
+
+const card=document.createElement('div');card.id='card';document.body.appendChild(card);
+const objEl=document.createElement('div');objEl.id='obj';document.body.appendChild(objEl);
+const lowEl=document.createElement('div');lowEl.id='lowhp';document.body.appendChild(lowEl);
+const jr=document.createElement('div');jr.id='journal';jr.innerHTML='<div></div>';document.body.appendChild(jr);
+const stamBar=document.createElement('div');stamBar.className='bar';stamBar.style.borderColor='#6b4a22';
+stamBar.innerHTML='<i style="background:#8fbf5a"></i>';$('hud').appendChild(stamBar);
+
+/* ---- state ---- */
+const S={began:false,step:0,kills:0,boss:null,done:false,stam:100,exh:false,lastN:0,hbT:0,t:0};
+const Q=[];let cur=null,curT=0;
+function say(text,speaker='',ms=6500){Q.push({text,speaker,ms})}
+
+const OBJ=[
+ ()=>'Talk to a townsperson in Valentine (F, close to them)',
+ ()=>'Find your horse and mount up (E)',
+ ()=>'Break Vane\'s gang: '+S.kills+' / 5 outlaws down',
+ ()=>'Find Silas Vane, holed up at Cholla Springs to the north',
+ ()=>'Vane is dead. The frontier is yours to explore.'
+];
+
+/* ---- audio: wind, footsteps, heartbeat ---- */
+let AX=null,windG=null;
+function ax(){if(AX)return AX;try{AX=new(window.AudioContext||window.webkitAudioContext)()}catch(e){return null}
+  const nb=AX.createBuffer(1,AX.sampleRate*2,AX.sampleRate),d=nb.getChannelData(0);
+  for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+  const src=AX.createBufferSource();src.buffer=nb;src.loop=true;
+  const bp=AX.createBiquadFilter();bp.type='bandpass';bp.frequency.value=500;bp.Q.value=.6;
+  windG=AX.createGain();windG.gain.value=.04;
+  src.connect(bp);bp.connect(windG);windG.connect(AX.destination);src.start();return AX}
+['mousedown','keydown'].forEach(ev=>addEventListener(ev,()=>ax(),{once:true}));
+function thump(v){if(!AX)return;const n=AX.currentTime,o=AX.createOscillator(),g=AX.createGain();
+  o.type='sine';o.frequency.setValueAtTime(70,n);o.frequency.exponentialRampToValueAtTime(40,n+.15);
+  g.gain.setValueAtTime(.0001,n);g.gain.exponentialRampToValueAtTime(.5*v*SET.vol,n+.01);g.gain.exponentialRampToValueAtTime(.0001,n+.2);
+  o.connect(g);g.connect(AX.destination);o.start(n);o.stop(n+.22)}
+function footstep(){if(!AX)return;const n=AX.sampleRate*.08,b=AX.createBuffer(1,n,AX.sampleRate),d=b.getChannelData(0);
+  for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/n,3);
+  const s=AX.createBufferSource();s.buffer=b;const f=AX.createBiquadFilter();f.type='bandpass';f.frequency.value=900+Math.random()*300;
+  const g=AX.createGain();g.gain.value=.22*SET.vol;s.connect(f);f.connect(g);g.connect(AX.destination);s.start()}
+
+/* ---- spawns & hooks ---- */
+function spawnBoss(){let x,z,t=0;do{x=rnd(-40,40);z=rnd(-150,-110)}while(gh(x,z)<-4.4&&++t<50);
+  const m=person(0x2a1a1a,0x0a0a0a,0x3a2a1a);m.rotation.order='YXZ';m.scale.setScalar(1.08);
+  m.position.set(x,gh(x,z),z);m.add(mpTag('Silas Vane'));scene.add(m);
+  const b={m,hp:260,alive:true,t:0,cd:1,dir:0,dieT:0,ph:0,boss:true};enemies.push(b);S.boss=b}
+
+const _kill1=kill;
+kill=function(e){if(e.alive&&S.step===2&&!e.law&&!e.boss)S.kills++;_kill1(e)};
+
+const _gr=greet;
+greet=function(){_gr();
+  if(S.step===0&&folk.some(f=>!f.dead&&f.m.position.distanceTo(P.pos)<5)){S.step=1;
+    say('"Get a horse, son. Vane\'s riders hit the Mercer place last night. Five of them rode east toward the badlands. Stop them before they reach the hills."','Sheriff Ruiz',8000)}};
+
+/* ---- journal ---- */
+function journal(open){jr.style.display=open?'flex':'none';if(!open)return;
+  if(document.pointerLockElement)document.exitPointerLock();
+  jr.firstChild.innerHTML='<h2>'+TITLE.toUpperCase()+'</h2>'+PROLOGUE.map(l=>'<p>'+l+'</p>').join('')+
+    '<p><b>Journal</b></p>'+JL.map((t,i)=>'<p class="'+(i<S.step?'d':'')+'">'+(i<S.step?'&#10003; ':'&#8226; ')+t+'</p>').join('')+
+    '<p style="opacity:.6">Press J to close</p>'}
+addEventListener('keydown',e=>{if(e.code==='KeyJ'&&started&&!shopOpen&&!setOpen)journal(jr.style.display!=='flex')});
+
+/* ---- main story + realism tick ---- */
+let last=performance.now();
+function tick(now){requestAnimationFrame(tick);
+  const dt=Math.min(.05,(now-last)/1000);last=now;S.t+=dt;
+
+  if(started&&!S.began){S.began=true;say(TITLE,'Chapter One',5000);PROLOGUE.forEach(l=>say(l,'',6500))}
+
+  if(S.began){
+    if(S.step===1&&P.mounted){S.step=2;say('Five riders, one trail of blood. Find them and end it.','Cal Mercer',6000)}
+    if(S.step===2&&S.kills>=5){S.step=3;spawnBoss();say('The gang scattered, but their trail leads north. Vane is waiting at Cholla Springs.','Trail rider',7000)}
+    if(S.step===3&&S.boss&&!S.boss.alive&&!S.done){S.done=true;S.step=4;P.bounty+=200;$('bounty').textContent='$'+P.bounty;
+      say('Vane lies in the dirt. The gold is still missing, but the ranch can finally rest. Ride on, or find new trouble.','Epilogue',9000)}
+    objEl.style.display=started&&!shopOpen&&!setOpen?'block':'none';
+    objEl.innerHTML='<b>OBJECTIVE</b>'+OBJ[S.step]();
+  }
+
+  /* cards */
+  if(!cur&&Q.length){cur=Q.shift();curT=cur.ms/1000;card.innerHTML=(cur.speaker?'<b>'+cur.speaker+'</b>':'')+cur.text;card.style.opacity=1}
+  if(cur){curT-=dt;if(curT<=0){cur=null;card.style.opacity=0}}
+
+  if(started&&!P.dead){
+    /* stamina: sprinting drains it, walking and standing recover it */
+    const moving=keys.KeyW||keys.KeyA||keys.KeyS||keys.KeyD;
+    const sprinting=(keys.ShiftLeft||keys.ShiftRight)&&moving&&!P.mounted&&!aim;
+    if(sprinting&&!S.exh)S.stam-=22*dt;else S.stam+=(moving?6:16)*dt;
+    S.stam=Math.max(0,Math.min(100,S.stam));
+    if(S.stam<=0)S.exh=true;if(S.exh&&S.stam>30)S.exh=false;
+    if(S.exh){keys.ShiftLeft=0;keys.ShiftRight=0}
+    stamBar.firstChild.style.width=S.stam+'%';
+
+    /* footsteps on foot */
+    if(!P.mounted){const n=Math.floor(P.phase/Math.PI);if(n!==S.lastN){S.lastN=n;footstep()}}
+
+    /* low health: red pulse and heartbeat */
+    const low=Math.max(0,(40-P.hp)/40);
+    lowEl.style.opacity=(low*.8*(.5+.5*Math.sin(S.t*(low>.5?7:4)))).toFixed(3);
+    if(low>0){S.hbT-=dt;if(S.hbT<=0){S.hbT=low>.5?.75:1.1;thump(.5+.5*low);setTimeout(()=>thump(.3+.4*low),190)}}
+  }else{lowEl.style.opacity=0}
+
+  /* wind: gusts, stronger in rain */
+  if(windG)windG.gain.value=(.035+.02*Math.sin(S.t*.25)+.04*G.rain)*SET.vol;
+}
+requestAnimationFrame(tick);
+})();
+</script>
+</body></html>
